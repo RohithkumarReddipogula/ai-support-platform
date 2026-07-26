@@ -7,6 +7,8 @@ from app.config import settings
 from app.database import create_tables
 from app.api.v1.auth import router as auth_router
 from app.api.v1.health import router as health_router
+from app.api.v1.documents import router as documents_router
+from app.models import document  # ensure tables are created
 
 
 @asynccontextmanager
@@ -56,3 +58,4 @@ if settings.SENTRY_DSN:
 # Routers
 app.include_router(health_router)
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(documents_router, prefix="/api/v1")
