@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str = ""
 
+    # Gemini
+    GEMINI_API_KEY: str = ""
+
     # Sentry
     SENTRY_DSN: str = ""
 

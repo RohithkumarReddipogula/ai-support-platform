@@ -12,7 +12,7 @@ def get_sync_db():
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from app.config import settings
-    sync_url = getattr(settings, 'CELERY_DATABASE_URL', settings.DATABASE_URL.replace("postgresql+asyncpg", "postgresql+psycopg2"))
+    sync_url = settings.DATABASE_URL.replace("postgresql+asyncpg", "postgresql+psycopg2")
     engine = create_engine(sync_url)
     Session = sessionmaker(bind=engine)
     return Session()
