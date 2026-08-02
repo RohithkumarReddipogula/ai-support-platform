@@ -1,12 +1,15 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+import time
 import redis.asyncio as aioredis
 
 from app.database import get_db
 from app.config import settings
 
 router = APIRouter(tags=["health"])
+
+START_TIME = time.time()
 
 
 @router.get("/health")
@@ -15,7 +18,9 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     health = {
         "status": "healthy",
         "app": settings.APP_NAME,
+        "version": "1.0.0",
         "env": settings.APP_ENV,
+        "uptime_seconds": round(time.time() - START_TIME),
         "services": {}
     }
 
@@ -45,5 +50,7 @@ async def root():
     return {
         "message": "AI Support Platform API",
         "version": "1.0.0",
-        "docs": "/docs"
+        "docs": "/docs",
+        "health": "/health",
+        "metrics": "/metrics"
     }

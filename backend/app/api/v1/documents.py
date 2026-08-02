@@ -1,57 +1,22 @@
+import os
 import uuid
-import asyncio
+import tempfile
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, func
 
-from app.database import get_db, AsyncSessionLocal
+from app.database import get_db
 from app.models.user import User
-from app.models.document import Document, DocumentChunk, DocumentStatus
+from app.models.document import Document, DocumentStatus
 from app.schemas.document import DocumentOut, DocumentList
 from app.core.auth import get_current_user
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 ALLOWED_TYPES = {"pdf", "txt", "docx"}
-MAX_FILE_SIZE = 10 * 1024 * 1024
-
-
-async def process_document_direct(document_id, tenant_id, content):
-    import uuid as uuid_lib
-    async with AsyncSessionLocal() as db:
-        try:
-            text_content = content.decode("utf-8", errors="ignore")
-            words = text_content.split()
-            chunks = []
-            for i in range(0, len(words), 400):
-                chunk = " ".join(words[i:i + 400])
-                if chunk.strip():
-                    chunks.append(chunk)
-            for i, chunk in enumerate(chunks):
-                chunk_obj = DocumentChunk(
-                    id=uuid_lib.uuid4(),
-                    document_id=document_id,
-                    tenant_id=tenant_id,
-                    content=chunk,
-                    chunk_index=i,
-                )
-                db.add(chunk_obj)
-            await db.execute(
-                update(Document)
-                .where(Document.id == document_id)
-                .values(status=DocumentStatus.COMPLETED, chunk_count=len(chunks))
-            )
-            await db.commit()
-            print(f"Processed {len(chunks)} chunks")
-        except Exception as e:
-            print(f"Error: {e}")
-            await db.execute(
-                update(Document)
-                .where(Document.id == document_id)
-                .values(status=DocumentStatus.FAILED, error_message=str(e))
-            )
-            await db.commit()
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 @router.post("/upload", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
@@ -60,12 +25,31 @@ async def upload_document(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Upload a document to the tenant knowledge base."""
+
+    # Validate file type
     file_ext = file.filename.split(".")[-1].lower() if "." in file.filename else ""
     if file_ext not in ALLOWED_TYPES:
-        raise HTTPException(status_code=400, detail=f"File type not supported.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File type not supported. Allowed: {', '.join(ALLOWED_TYPES)}"
+        )
+
+    # Read file content
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="File too large.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File too large. Maximum size is 10MB."
+        )
+
+    # Save to temp file for Celery worker
+    tmp_dir = tempfile.mkdtemp()
+    tmp_path = os.path.join(tmp_dir, f"{uuid.uuid4()}.{file_ext}")
+    with open(tmp_path, "wb") as f:
+        f.write(content)
+
+    # Create document record
     document = Document(
         tenant_id=current_user.tenant_id,
         filename=file.filename,
@@ -75,12 +59,16 @@ async def upload_document(
     db.add(document)
     await db.commit()
     await db.refresh(document)
-    await process_document_direct(
+
+    # Dispatch background ingestion job
+    from app.tasks.document_tasks import ingest_document
+    ingest_document.delay(
         document_id=str(document.id),
         tenant_id=str(current_user.tenant_id),
-        content=content,
+        file_path=tmp_path,
+        file_type=file_ext,
     )
-    await db.refresh(document)
+
     return document
 
 
@@ -89,6 +77,7 @@ async def list_documents(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """List all documents in the tenant knowledge base."""
     result = await db.execute(
         select(Document)
         .where(Document.tenant_id == current_user.tenant_id)
@@ -104,6 +93,7 @@ async def get_document(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Get a single document status."""
     result = await db.execute(
         select(Document).where(
             Document.id == document_id,
@@ -122,7 +112,10 @@ async def delete_document(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Delete a document and all its chunks from the knowledge base."""
+    from app.models.document import DocumentChunk
     from sqlalchemy import delete
+
     result = await db.execute(
         select(Document).where(
             Document.id == document_id,
@@ -132,6 +125,8 @@ async def delete_document(
     document = result.scalar_one_or_none()
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    # Delete chunks first
     await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
     await db.delete(document)
     await db.commit()

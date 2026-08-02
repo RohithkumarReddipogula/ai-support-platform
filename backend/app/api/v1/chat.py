@@ -11,8 +11,43 @@ from app.models.chat import Conversation, Message
 from app.schemas.chat import ChatRequest, ChatResponse, SourceChunk, ConversationHistory, MessageOut
 from app.core.auth import get_current_user
 from app.services.rag import retrieve_relevant_chunks, build_context
+from app.config import settings
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+SYSTEM_PROMPT = """You are a helpful customer support assistant.
+Answer questions based ONLY on the provided context from the knowledge base.
+If the answer is not in the context, say "I don't have information about that in my knowledge base."
+Always be polite, clear, and concise."""
+
+
+async def call_gemini(messages: list, context: str, question: str) -> str:
+    """Call Gemini Pro for chat completion."""
+    import google.generativeai as genai
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        system_instruction=SYSTEM_PROMPT
+    )
+
+    # Build conversation history
+    history = []
+    for msg in messages:
+        if msg["role"] == "user":
+            history.append({"role": "user", "parts": [msg["content"]]})
+        elif msg["role"] == "assistant":
+            history.append({"role": "model", "parts": [msg["content"]]})
+
+    chat = model.start_chat(history=history)
+
+    full_message = f"""Context from knowledge base:
+{context}
+
+User question: {question}"""
+
+    response = chat.send_message(full_message)
+    return response.text
 
 
 @router.post("", response_model=ChatResponse)
@@ -21,9 +56,11 @@ async def chat(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """RAG Chat endpoint powered by Gemini."""
     tenant_id = str(current_user.tenant_id)
     session_id = request.session_id or str(uuid.uuid4())
 
+    # Get or create conversation
     result = await db.execute(
         select(Conversation).where(
             Conversation.session_id == session_id,
@@ -40,6 +77,16 @@ async def chat(
         db.add(conversation)
         await db.flush()
 
+    # Get recent history
+    history_result = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conversation.id)
+        .order_by(Message.created_at.desc())
+        .limit(6)
+    )
+    recent_messages = list(reversed(history_result.scalars().all()))
+
+    # RAG retrieval
     chunks = await retrieve_relevant_chunks(
         query=request.message,
         tenant_id=tenant_id,
@@ -48,11 +95,14 @@ async def chat(
     )
     context = build_context(chunks)
 
-    if chunks:
-        answer = "Based on our knowledge base:\n\n" + context[:800]
-    else:
-        answer = "I don't have information about that in my knowledge base."
+    # Build history for Gemini
+    history = [{"role": m.role if m.role != "assistant" else "assistant", "content": m.content}
+               for m in recent_messages]
 
+    # Call Gemini
+    answer = await call_gemini(history, context, request.message)
+
+    # Save messages
     user_msg = Message(
         conversation_id=conversation.id,
         tenant_id=current_user.tenant_id,
