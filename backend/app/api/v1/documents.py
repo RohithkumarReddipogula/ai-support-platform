@@ -1,6 +1,4 @@
-import os
 import uuid
-import tempfile
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
@@ -20,7 +18,6 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
 
 
 async def process_document_direct(document_id, tenant_id, content):
-    """Process document directly — chunk and store without Celery."""
     import uuid as uuid_lib
     async with AsyncSessionLocal() as db:
         try:
@@ -31,7 +28,6 @@ async def process_document_direct(document_id, tenant_id, content):
                 chunk = " ".join(words[i:i + 400])
                 if chunk.strip():
                     chunks.append(chunk)
-
             for i, chunk in enumerate(chunks):
                 chunk_obj = DocumentChunk(
                     id=uuid_lib.uuid4(),
@@ -41,16 +37,15 @@ async def process_document_direct(document_id, tenant_id, content):
                     chunk_index=i,
                 )
                 db.add(chunk_obj)
-
             await db.execute(
                 update(Document)
                 .where(Document.id == document_id)
                 .values(status=DocumentStatus.COMPLETED, chunk_count=len(chunks))
             )
             await db.commit()
-            print(f"Document {document_id} processed: {len(chunks)} chunks")
+            print(f"Processed {len(chunks)} chunks")
         except Exception as e:
-            print(f"Document processing failed: {e}")
+            print(f"Error: {e}")
             await db.execute(
                 update(Document)
                 .where(Document.id == document_id)
@@ -67,18 +62,10 @@ async def upload_document(
 ):
     file_ext = file.filename.split(".")[-1].lower() if "." in file.filename else ""
     if file_ext not in ALLOWED_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File type not supported. Allowed: {', '.join(ALLOWED_TYPES)}"
-        )
-
+        raise HTTPException(status_code=400, detail=f"File type not supported.")
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File too large. Maximum size is 10MB."
-        )
-
+        raise HTTPException(status_code=400, detail="File too large.")
     document = Document(
         tenant_id=current_user.tenant_id,
         filename=file.filename,
@@ -88,13 +75,12 @@ async def upload_document(
     db.add(document)
     await db.commit()
     await db.refresh(document)
-
-    asyncio.create_task(process_document_direct(
+    await process_document_direct(
         document_id=str(document.id),
         tenant_id=str(current_user.tenant_id),
         content=content,
-    ))
-
+    )
+    await db.refresh(document)
     return document
 
 

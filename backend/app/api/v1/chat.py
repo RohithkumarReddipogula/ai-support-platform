@@ -11,11 +11,8 @@ from app.models.chat import Conversation, Message
 from app.schemas.chat import ChatRequest, ChatResponse, SourceChunk, ConversationHistory, MessageOut
 from app.core.auth import get_current_user
 from app.services.rag import retrieve_relevant_chunks, build_context
-from app.config import settings
 
 router = APIRouter(prefix="/chat", tags=["chat"])
-
-SYSTEM_PROMPT = "You are a helpful customer support assistant. Answer based only on the provided context."
 
 
 @router.post("", response_model=ChatResponse)
