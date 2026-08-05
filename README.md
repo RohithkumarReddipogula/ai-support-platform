@@ -1,170 +1,166 @@
-# AI Customer Support Platform
+# Enterprise Customer Support Multi-Agent System
 
-A production-grade, multi-tenant SaaS application that lets any business deploy an AI-powered customer support chatbot trained on their own documentation — built from scratch in 7 days as a solo project.
+A multi-agent AI system built for the Band of Agents Hackathon 2026. Four specialised agents collaborate through the Band platform to automatically handle customer support tickets from initial triage through to final response approval.
 
-**Live Demo:** https://your-app.railway.app/docs  
-**Widget Demo:** https://your-app.railway.app/static/demo.html  
-**GitHub:** https://github.com/RohithkumarReddipogula/ai-support-platform
+## What it does
 
----
+When a customer submits a support ticket, the system routes it through four agents in sequence:
 
-## What I Built
+1. The Triage Agent reads the ticket, classifies its urgency (HIGH, MEDIUM, or LOW) and topic (BILLING, ACCESS, TECHNICAL, or GENERAL), then hands off to the Knowledge Agent.
 
-Businesses upload their support documents (FAQs, manuals, policies). The platform chunks and indexes them into PostgreSQL with pgvector. A embeddable JavaScript widget — added to any website with a single script tag — then answers customer questions in real time using a RAG pipeline backed by that knowledge base.
+2. The Knowledge Agent searches a hybrid retrieval knowledge base using BM25 sparse search fused with Microsoft E5-base-v2 dense embeddings. The fusion weight alpha=0.70 was discovered through systematic experimentation during MSc thesis research and validated with a paired t-test at p=0.002, achieving 93% Recall@10 on 8.84 million MS MARCO passages.
 
-Every tenant gets a fully isolated knowledge base, their own API key, and a dedicated chat history. The same infrastructure that powers the dashboard also powers the public widget endpoint.
+3. The Resolution Agent receives the retrieved knowledge and drafts a professional response. If the retrieval confidence score falls below 0.4, it flags the ticket for escalation instead of drafting a response.
 
----
+4. The Review Agent performs a final quality check on the drafted response. It approves responses that pass the confidence threshold and escalates to human review for anything that does not meet the quality bar.
 
-## Technical Architecture
+All four agents communicate through Band chat rooms using the Band SDK and LangGraph adapters.
+
+## Demo
+
+Live demo of agents running on Band platform:
+
+- Band platform: https://app.band.ai
+- YouTube walkthrough: [Insert your YouTube link here]
+
+## Architecture
 
 ```
-Browser (React Dashboard)
-        |
-        v
-FastAPI Backend ──────────────── PostgreSQL + pgvector
-        |                               |
-   JWT Auth                     Document chunks
-        |                        Conversation history
-   Document upload               User + tenant data
-        |
-   Chunking pipeline (sync)
-        |
-   pgvector full-text retrieval
-        |
-   Chat response with citations
-        |
-        v
-Embeddable JS Widget (any website, one script tag)
+Customer Ticket
+      |
+      v
+[Triage Agent]
+ - Classifies urgency and topic
+ - Routes to Knowledge Agent
+      |
+      v
+[Knowledge Agent]
+ - Hybrid RAG: BM25 + E5-base-v2 dense embeddings
+ - Fusion weight alpha=0.70 (validated p=0.002)
+ - Returns top 3 results with confidence score
+      |
+      v
+[Resolution Agent]
+ - Drafts customer response
+ - Flags low-confidence tickets for escalation
+      |
+      v
+[Review Agent]
+ - Quality check and approval gate
+ - Approves or escalates to human review
+      |
+      v
+Approved Response
 ```
 
----
+## Track
+
+Track 1: Internal Enterprise Workflows
 
 ## Tech Stack
 
-| Layer | Technology | Why |
-|---|---|---|
-| Backend | FastAPI + Python 3.11 | Async-native, type-safe, OpenAPI docs auto-generated |
-| Database | PostgreSQL 16 + pgvector | Relational + vector search in one system |
-| Auth | JWT (access + refresh tokens) | Stateless, production-standard |
-| Frontend | React + Vite + TailwindCSS | Fast builds, clean UI |
-| Infrastructure | Docker Compose | Reproducible local and production environment |
-| CI/CD | GitHub Actions | Automated test + build on every push |
-| Monitoring | Prometheus /metrics + /health | Production observability |
-| Deployment | Railway.app | Zero-config cloud deployment |
+- Band SDK 1.0.0 with LangGraph adapter
+- Groq API (llama-3.1-8b-instant) as the LLM provider
+- LangChain and LangGraph for agent orchestration
+- FAISS for vector indexing
+- BM25 (rank-bm25) for sparse retrieval
+- sentence-transformers (all-MiniLM-L6-v2) for dense embeddings
+- Python 3.11
 
----
+## Key Research Finding
 
-## Key Features
+The Knowledge Agent uses a hybrid retrieval approach where the optimal fusion weight between sparse and dense retrieval is alpha=0.70, not the commonly assumed 0.50. This was the central finding of my MSc thesis in Data Science, validated through 11 systematic MLflow experiments with statistical significance at p=0.002, t(99)=3.14. The system achieves 93% Recall@10, MRR=1.0, at 710ms latency with a 4.46MB FAISS index on 8.84 million passages.
 
-**Multi-tenant isolation** — Each business account gets its own knowledge base, API key, and conversation history. No data crosses tenant boundaries.
+## Setup
 
-**Document ingestion pipeline** — Upload PDF, TXT, or DOCX. The platform extracts text, splits it into 400-word chunks, and stores them in PostgreSQL. Status tracking shows pending, processing, completed, or failed.
+### Prerequisites
 
-**RAG chat engine** — Incoming questions trigger a full-text search across the tenant's document chunks. Retrieved context is injected into the prompt and returned with source citations.
+- Python 3.11
+- uv package manager
+- Band account at band.ai
+- Groq API key (free at console.groq.com)
 
-**Embeddable widget** — A standalone JavaScript file served from the backend. Any website can embed the support chat with one line:
-
-```html
-<script src="https://your-app.railway.app/static/widget.js" data-api-key="sk_xxx"></script>
-```
-
-**Public widget API** — A separate endpoint authenticates via tenant API key rather than JWT, so the widget works without a logged-in user session.
-
-**Health monitoring** — `/health` returns live status of the database and Redis with uptime in seconds. `/metrics` exposes Prometheus-format data.
-
----
-
-## API Endpoints
-
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| POST | /api/v1/auth/register | Public | Register user and create tenant |
-| POST | /api/v1/auth/login | Public | Login, receive JWT tokens |
-| POST | /api/v1/auth/refresh | Public | Refresh access token |
-| GET | /api/v1/auth/me | JWT | Get current user and tenant |
-| POST | /api/v1/documents/upload | JWT | Upload and process document |
-| GET | /api/v1/documents | JWT | List tenant knowledge base |
-| DELETE | /api/v1/documents/{id} | JWT | Remove document and chunks |
-| POST | /api/v1/chat | JWT | RAG chat with source citations |
-| GET | /api/v1/chat/history/{id} | JWT | Retrieve conversation history |
-| POST | /api/v1/chat/widget | API Key | Public widget chat endpoint |
-| GET | /health | Public | Database and Redis health check |
-| GET | /metrics | Public | Prometheus metrics |
-
----
-
-## Running Locally
+### Installation
 
 ```bash
-git clone https://github.com/RohithkumarReddipogula/ai-support-platform
-cd ai-support-platform
-cp .env.example .env
-# Add your GEMINI_API_KEY and a SECRET_KEY to .env
-docker compose up --build
+git clone https://github.com/RohithkumarReddipogula/rag-agent-berlin.git
+cd rag-agent-berlin
+uv venv
+.venv\Scripts\activate
+uv add "band-sdk[langgraph]" langchain-groq langchain langgraph faiss-cpu sentence-transformers rank-bm25
 ```
 
-Visit `http://localhost:8000/docs` for the API, `http://localhost:5173` for the dashboard.
+### Configuration
 
----
+Create a `.env` file in the project root:
 
-## Running Tests
+```
+GROQ_API_KEY=your_groq_api_key_here
+```
+
+Create an `agent_config.yaml` file with your Band agent credentials:
+
+```yaml
+triage_agent:
+  agent_id: "your-triage-agent-uuid"
+  api_key: "your-triage-agent-api-key"
+
+knowledge_agent:
+  agent_id: "your-knowledge-agent-uuid"
+  api_key: "your-knowledge-agent-api-key"
+
+resolution_agent:
+  agent_id: "your-resolution-agent-uuid"
+  api_key: "your-resolution-agent-api-key"
+
+review_agent:
+  agent_id: "your-review-agent-uuid"
+  api_key: "your-review-agent-api-key"
+```
+
+### Running the agents
+
+Open four terminal windows and run one agent in each:
 
 ```bash
-cd backend
-pip install pytest pytest-asyncio httpx
-pytest tests/ -v
+uv run python triage_agent.py
+uv run python knowledge_agent.py
+uv run python resolution_agent.py
+uv run python review_agent.py
 ```
 
-12 tests covering authentication, document upload, RAG chat, session continuity, and the public widget endpoint.
+Once all four agents show "Agent started", go to your Band chat room and send a message mentioning @Triage Agent with a support ticket.
 
----
+### Testing
+
+Send this message in your Band chat room:
+
+```
+@Triage Agent my payment is failing and I cannot login to my account. This is urgent.
+```
+
+Watch the four agents collaborate to classify, search, draft, and approve a response in real time.
 
 ## Project Structure
 
 ```
-ai-support-platform/
-├── backend/
-│   ├── app/
-│   │   ├── api/v1/          # auth, chat, documents, widget, health
-│   │   ├── core/            # JWT security, auth dependencies
-│   │   ├── models/          # SQLAlchemy models (User, Tenant, Document, Chat)
-│   │   ├── schemas/         # Pydantic request/response schemas
-│   │   ├── services/        # RAG retrieval logic
-│   │   └── static/          # widget.js + demo.html
-│   ├── tests/               # pytest test suite
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/
-│   └── src/
-│       ├── pages/           # Login, Register, Dashboard
-│       ├── components/      # ProtectedRoute
-│       ├── hooks/           # useAuth context
-│       └── services/        # Axios API client
-├── docker-compose.yml
-└── .github/workflows/ci.yml
+rag-agent-berlin/
+├── triage_agent.py       # Ticket classification and routing
+├── knowledge_agent.py    # Hybrid RAG retrieval (BM25 + dense)
+├── resolution_agent.py   # Response drafting with confidence scoring
+├── review_agent.py       # Quality check and escalation gate
+├── agent_config.yaml     # Band agent credentials (not committed)
+├── requirements.txt      # Python dependencies
+└── README.md
 ```
 
----
+## About
 
-## Build Log
+Built solo by Rohith Kumar Reddipogula for the Band of Agents Hackathon, June 2026.
 
-| Day | What I built |
-|---|---|
-| Day 1 | FastAPI project setup, PostgreSQL + pgvector, JWT auth (register/login/refresh/me), Docker Compose, GitHub Actions CI |
-| Day 2 | Document upload endpoint, text extraction, chunking pipeline, status tracking |
-| Day 3 | RAG chat engine, conversation history, context injection, source citations |
-| Day 4 | React dashboard — auth pages, document management, live chat UI |
-| Day 5 | Embeddable JS widget, public widget API endpoint, demo page |
-| Day 6 | pytest test suite (12 tests), Prometheus monitoring, health endpoint with uptime |
-| Day 7 | Railway.app deployment, live public URL, demo data |
+MSc Data Science, University of Europe for Applied Sciences, Potsdam, Germany.
 
----
-
-## Author
-
-**Rohith Kumar Reddipogula**  
-MSc Data Science — University of Europe for Applied Sciences, Potsdam (2026)  
-Specialisation: NLP, RAG systems, ML engineering
-
-[GitHub](https://github.com/RohithkumarReddipogula) | [LinkedIn](https://www.linkedin.com/in/rohith-kumar-reddipogula-a6692030b/) | [Portfolio](https://rohithkumarreddipogula.github.io) | [Live RAG Demo](https://rohith2026-hybrid-rag-demo.hf.space)
+- Portfolio: https://rohithkumarreddipogula.github.io
+- GitHub: https://github.com/RohithkumarReddipogula
+- LinkedIn: https://linkedin.com/in/rohith-kumar-reddipogula-a6692030b
+- Email: rohithkumar336699@gmail.com
