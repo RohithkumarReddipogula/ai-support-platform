@@ -1,10 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { documentsAPI } from '../services/api'
-import {
-  Bot, Upload, FileText, Trash2, Send,
-  LogOut, CheckCircle, Clock, XCircle, Loader2, MessageSquare
-} from 'lucide-react'
+import { Bot, Upload, FileText, Trash2, Send, LogOut, CheckCircle, Clock, XCircle, Loader2, MessageSquare } from 'lucide-react'
 
 export default function Dashboard() {
   const { user, logout } = useAuth()
@@ -19,38 +16,24 @@ export default function Dashboard() {
   const chatRef = useRef()
 
   useEffect(() => { loadDocuments() }, [])
-
-  useEffect(() => {
-    chatRef.current?.scrollTo(0, chatRef.current.scrollHeight)
-  }, [messages])
+  useEffect(() => { chatRef.current?.scrollTo(0, chatRef.current.scrollHeight) }, [messages])
 
   const loadDocuments = async () => {
-    try {
-      const res = await documentsAPI.list()
-      setDocuments(res.data.documents)
-    } catch (e) {}
+    try { const res = await documentsAPI.list(); setDocuments(res.data.documents) } catch (e) {}
   }
 
   const handleUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
     setUploading(true)
-    try {
-      await documentsAPI.upload(file)
-      await loadDocuments()
-      setTimeout(loadDocuments, 3000)
-    } catch (err) {
-      alert(err.response?.data?.detail || 'Upload failed')
-    } finally {
-      setUploading(false)
-      fileRef.current.value = ''
-    }
+    try { await documentsAPI.upload(file); await loadDocuments(); setTimeout(loadDocuments, 3000) }
+    catch (err) { alert(err.response?.data?.detail || 'Upload failed') }
+    finally { setUploading(false); fileRef.current.value = '' }
   }
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this document?')) return
-    await documentsAPI.delete(id)
-    await loadDocuments()
+    await documentsAPI.delete(id); await loadDocuments()
   }
 
   const handleSend = async () => {
@@ -60,232 +43,110 @@ export default function Dashboard() {
     setMessages(prev => [...prev, { role: 'user', content: userMsg }])
     setSending(true)
     setMessages(prev => [...prev, { role: 'assistant', content: '', streaming: true }])
-
     try {
       const token = localStorage.getItem('token')
       const response = await fetch('http://localhost:8000/api/v1/chat/stream', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
         body: JSON.stringify({ message: userMsg, session_id: sessionId || null })
       })
-
       const sid = response.headers.get('X-Session-ID')
       if (sid) setSessionId(sid)
-
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let fullText = ''
-
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         const chunk = decoder.decode(value)
-        const lines = chunk.split('\n')
-        for (const line of lines) {
+        for (const line of chunk.split('\n')) {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6))
-              if (data.word) {
-                fullText += data.word
-                setMessages(prev => {
-                  const updated = [...prev]
-                  updated[updated.length - 1] = { role: 'assistant', content: fullText, streaming: true }
-                  return updated
-                })
-              }
-              if (data.done) {
-                setMessages(prev => {
-                  const updated = [...prev]
-                  updated[updated.length - 1] = { role: 'assistant', content: fullText, streaming: false }
-                  return updated
-                })
-              }
+              if (data.word) { fullText += data.word; setMessages(prev => { const u = [...prev]; u[u.length-1] = { role: 'assistant', content: fullText, streaming: true }; return u }) }
+              if (data.done) { setMessages(prev => { const u = [...prev]; u[u.length-1] = { role: 'assistant', content: fullText, streaming: false }; return u }) }
             } catch (e) {}
           }
         }
       }
     } catch (err) {
-      setMessages(prev => {
-        const updated = [...prev]
-        updated[updated.length - 1] = { role: 'assistant', content: 'Something went wrong. Try again.', streaming: false }
-        return updated
-      })
-    } finally {
-      setSending(false)
-    }
+      setMessages(prev => { const u = [...prev]; u[u.length-1] = { role: 'assistant', content: 'Something went wrong. Try again.', streaming: false }; return u })
+    } finally { setSending(false) }
   }
 
-  const statusIcon = (status) => {
-    if (status === 'completed') return <CheckCircle size={14} className="text-green-500" />
-    if (status === 'failed') return <XCircle size={14} className="text-red-500" />
-    return <Clock size={14} className="text-yellow-500 animate-pulse" />
-  }
+  const statusIcon = (s) => s === 'completed' ? <CheckCircle size={14} className='text-green-500' /> : s === 'failed' ? <XCircle size={14} className='text-red-500' /> : <Clock size={14} className='text-yellow-500 animate-pulse' />
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="bg-blue-600 p-1.5 rounded-lg">
-            <Bot size={20} className="text-white" />
-          </div>
-          <div>
-            <span className="font-semibold text-gray-900">AI Support Platform</span>
-            <span className="text-xs text-gray-500 ml-2">{user?.tenant?.name}</span>
-          </div>
+    <div className='min-h-screen bg-gray-50 flex flex-col'>
+      <header className='bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between'>
+        <div className='flex items-center gap-3'>
+          <div className='bg-blue-600 p-1.5 rounded-lg'><Bot size={20} className='text-white' /></div>
+          <div><span className='font-semibold text-gray-900'>AI Support Platform</span><span className='text-xs text-gray-500 ml-2'>{user?.tenant?.name}</span></div>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-600">{user?.email}</span>
-          <button onClick={logout} className="text-gray-400 hover:text-gray-600 transition">
-            <LogOut size={18} />
-          </button>
-        </div>
+        <div className='flex items-center gap-3'><span className='text-sm text-gray-600'>{user?.email}</span><button onClick={logout} className='text-gray-400 hover:text-gray-600'><LogOut size={18} /></button></div>
       </header>
-
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
-          <div className="p-4 border-b border-gray-100">
-            <button
-              onClick={() => setActiveTab('chat')}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === 'chat' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-              <MessageSquare size={16} />Chat
-            </button>
-            <button
-              onClick={() => setActiveTab('documents')}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition mt-1 ${activeTab === 'documents' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-              <FileText size={16} />Documents
-            </button>
+      <div className='flex flex-1 overflow-hidden'>
+        <aside className='w-64 bg-white border-r border-gray-200 flex flex-col'>
+          <div className='p-4 border-b border-gray-100'>
+            <button onClick={() => setActiveTab('chat')} className={'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ' + (activeTab === 'chat' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50')}><MessageSquare size={16} />Chat</button>
+            <button onClick={() => setActiveTab('documents')} className={'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition mt-1 ' + (activeTab === 'documents' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50')}><FileText size={16} />Documents</button>
           </div>
-
-          <div className="p-4">
-            <input ref={fileRef} type="file" accept=".pdf,.txt,.docx" onChange={handleUpload} className="hidden" />
-            <button
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 rounded-lg transition"
-            >
-              {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-              {uploading ? 'Uploading...' : 'Upload Document'}
+          <div className='p-4'>
+            <input ref={fileRef} type='file' accept='.pdf,.txt,.docx' onChange={handleUpload} className='hidden' />
+            <button onClick={() => fileRef.current?.click()} disabled={uploading} className='w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 rounded-lg transition'>
+              {uploading ? <Loader2 size={14} className='animate-spin' /> : <Upload size={14} />}{uploading ? 'Uploading...' : 'Upload Document'}
             </button>
-            <p className="text-xs text-gray-400 mt-2 text-center">PDF, TXT, DOCX up to 10MB</p>
+            <p className='text-xs text-gray-400 mt-2 text-center'>PDF, TXT, DOCX up to 10MB</p>
           </div>
-
-          <div className="flex-1 overflow-y-auto px-4 pb-4">
-            {documents.length === 0 ? (
-              <p className="text-xs text-gray-400 text-center mt-4">No documents yet</p>
-            ) : (
-              <div className="space-y-2">
-                {documents.map(doc => (
-                  <div key={doc.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
-                    <FileText size={14} className="text-gray-400 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-gray-700 truncate">{doc.filename}</p>
-                      <div className="flex items-center gap-1 mt-0.5">
-                        {statusIcon(doc.status)}
-                        <span className="text-xs text-gray-400">{doc.chunk_count} chunks</span>
-                      </div>
-                    </div>
-                    <button onClick={() => handleDelete(doc.id)} className="text-gray-300 hover:text-red-400 transition shrink-0">
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                ))}
-              </div>
+          <div className='flex-1 overflow-y-auto px-4 pb-4'>
+            {documents.length === 0 ? <p className='text-xs text-gray-400 text-center mt-4'>No documents yet</p> : (
+              <div className='space-y-2'>{documents.map(doc => (
+                <div key={doc.id} className='flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2'>
+                  <FileText size={14} className='text-gray-400 shrink-0' />
+                  <div className='flex-1 min-w-0'><p className='text-xs font-medium text-gray-700 truncate'>{doc.filename}</p><div className='flex items-center gap-1 mt-0.5'>{statusIcon(doc.status)}<span className='text-xs text-gray-400'>{doc.chunk_count} chunks</span></div></div>
+                  <button onClick={() => handleDelete(doc.id)} className='text-gray-300 hover:text-red-400 shrink-0'><Trash2 size={12} /></button>
+                </div>
+              ))}</div>
             )}
           </div>
         </aside>
-
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main className='flex-1 flex flex-col overflow-hidden'>
           {activeTab === 'chat' ? (
             <>
-              <div ref={chatRef} className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div ref={chatRef} className='flex-1 overflow-y-auto p-6 space-y-4'>
                 {messages.length === 0 && (
-                  <div className="flex flex-col items-center justify-center h-full text-center">
-                    <div className="bg-blue-100 p-4 rounded-full mb-4">
-                      <Bot size={32} className="text-blue-600" />
-                    </div>
-                    <h2 className="text-lg font-semibold text-gray-800">AI Support Assistant</h2>
-                    <p className="text-sm text-gray-500 mt-2 max-w-sm">
-                      Upload documents and ask questions. The AI will answer based on your knowledge base.
-                    </p>
+                  <div className='flex flex-col items-center justify-center h-full text-center'>
+                    <div className='bg-blue-100 p-4 rounded-full mb-4'><Bot size={32} className='text-blue-600' /></div>
+                    <h2 className='text-lg font-semibold text-gray-800'>AI Support Assistant</h2>
+                    <p className='text-sm text-gray-500 mt-2 max-w-sm'>Upload documents and ask questions.</p>
                   </div>
                 )}
-
                 {messages.map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div key={i} className={'flex ' + (msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                     <div className={msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'}>
-                      <p className="text-sm whitespace-pre-wrap">
-                        {msg.content}
-                        {msg.streaming && <span className="animate-pulse">▋</span>}
-                      </p>
+                      <p className='text-sm whitespace-pre-wrap'>{msg.content}{msg.streaming && <span className='animate-pulse'>▋</span>}</p>
                     </div>
                   </div>
                 ))}
-
-                {sending && messages[messages.length - 1]?.content === '' && (
-                  <div className="flex justify-start">
-                    <div className="chat-bubble-ai flex items-center gap-2">
-                      <Loader2 size={14} className="animate-spin text-gray-400" />
-                      <span className="text-sm text-gray-500">Thinking...</span>
-                    </div>
-                  </div>
-                )}
               </div>
-
-              <div className="border-t border-gray-200 bg-white p-4">
-                <div className="flex gap-3 max-w-3xl mx-auto">
-                  <input
-                    type="text"
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                    placeholder="Ask a question about your documents..."
-                    className="flex-1 border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <button
-                    onClick={handleSend}
-                    disabled={!input.trim() || sending}
-                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white px-4 py-2.5 rounded-xl transition"
-                  >
-                    <Send size={18} />
-                  </button>
+              <div className='border-t border-gray-200 bg-white p-4'>
+                <div className='flex gap-3 max-w-3xl mx-auto'>
+                  <input type='text' value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()} placeholder='Ask a question about your documents...' className='flex-1 border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500' />
+                  <button onClick={handleSend} disabled={!input.trim() || sending} className='bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white px-4 py-2.5 rounded-xl transition'><Send size={18} /></button>
                 </div>
               </div>
             </>
           ) : (
-            <div className="flex-1 overflow-y-auto p-6">
-              <h2 className="text-lg font-semibold text-gray-800 mb-4">Knowledge Base Documents</h2>
-              {documents.length === 0 ? (
-                <div className="text-center py-16 text-gray-400">
-                  <FileText size={48} className="mx-auto mb-4 opacity-30" />
-                  <p>No documents uploaded yet.</p>
-                </div>
-              ) : (
-                <div className="grid gap-4">
-                  {documents.map(doc => (
-                    <div key={doc.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
-                      <FileText size={24} className="text-blue-500 shrink-0" />
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-800">{doc.filename}</p>
-                        <div className="flex items-center gap-3 mt-1">
-                          <div className="flex items-center gap-1">
-                            {statusIcon(doc.status)}
-                            <span className="text-xs text-gray-500 capitalize">{doc.status}</span>
-                          </div>
-                          <span className="text-xs text-gray-400">{doc.chunk_count} chunks</span>
-                          <span className="text-xs text-gray-400">{new Date(doc.created_at).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                      <button onClick={() => handleDelete(doc.id)} className="text-gray-300 hover:text-red-500 transition p-2 rounded-lg hover:bg-red-50">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+            <div className='flex-1 overflow-y-auto p-6'>
+              <h2 className='text-lg font-semibold text-gray-800 mb-4'>Knowledge Base Documents</h2>
+              {documents.length === 0 ? <div className='text-center py-16 text-gray-400'><FileText size={48} className='mx-auto mb-4 opacity-30' /><p>No documents uploaded yet.</p></div> : (
+                <div className='grid gap-4'>{documents.map(doc => (
+                  <div key={doc.id} className='bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4'>
+                    <FileText size={24} className='text-blue-500 shrink-0' />
+                    <div className='flex-1'><p className='font-medium text-gray-800'>{doc.filename}</p><div className='flex items-center gap-3 mt-1'><div className='flex items-center gap-1'>{statusIcon(doc.status)}<span className='text-xs text-gray-500 capitalize'>{doc.status}</span></div><span className='text-xs text-gray-400'>{doc.chunk_count} chunks</span></div></div>
+                    <button onClick={() => handleDelete(doc.id)} className='text-gray-300 hover:text-red-500 transition p-2 rounded-lg hover:bg-red-50'><Trash2 size={16} /></button>
+                  </div>
+                ))}</div>
               )}
             </div>
           )}
