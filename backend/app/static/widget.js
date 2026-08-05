@@ -4,7 +4,7 @@
  */
 (function () {
   const API_KEY = document.currentScript?.getAttribute('data-api-key') || '';
-  const API_BASE = document.currentScript?.getAttribute('data-api-url') || 'http://localhost:8000';
+  const API_BASE = document.currentScript?.getAttribute('data-api-url') || 'https://ai-support-platform-production-07ac.up.railway.app';
 
   let sessionId = null;
   let isOpen = false;
